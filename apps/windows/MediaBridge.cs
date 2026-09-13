@@ -19,12 +19,24 @@ public sealed class MediaBridge : IDisposable
     private long revision;
     private byte[]? art;
     private DateTimeOffset lastMetadata = DateTimeOffset.MinValue;
+    private DateTimeOffset lastMixer = DateTimeOffset.MinValue;
+    private MixerApp[] mixer = [];
     private StateMessage latest = Empty(null);
     public StateMessage Latest => Volatile.Read(ref latest);
     public byte[]? Artwork => Volatile.Read(ref art);
     private static readonly Capabilities None = new(false, false, false, false, false, false);
     private static StateMessage Empty(string? error) => new("state", 1, Environment.MachineName, false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, error);
+        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, [], error);
+
+    private MixerApp[] Mixer()
+    {
+        if (DateTimeOffset.UtcNow - lastMixer > TimeSpan.FromSeconds(1))
+        {
+            mixer = CoreAudio.GetMixer();
+            lastMixer = DateTimeOffset.UtcNow;
+        }
+        return mixer;
+    }
 
     public async Task Initialize()
     {
@@ -80,7 +92,7 @@ public sealed class MediaBridge : IDisposable
         }
         if (session == null)
         {
-            Volatile.Write(ref latest, Empty(null) with { Locked = locked, Sources = sources, SelectedSource = selected, Volume = CoreAudio.Get() });
+            Volatile.Write(ref latest, Empty(null) with { Locked = locked, Sources = sources, SelectedSource = selected, Volume = CoreAudio.Get(), Mixer = Mixer() });
             return;
         }
         if (Interlocked.Exchange(ref metadataDirty, 0) != 0 || DateTimeOffset.UtcNow - lastMetadata > TimeSpan.FromSeconds(15))
@@ -103,7 +115,7 @@ public sealed class MediaBridge : IDisposable
         position = duration > 0 ? Math.Clamp(position, 0, duration) : Math.Max(0, position);
         var media = new MediaState(sessionId, revision, DisplayName(session.SourceAppUserModelId), title, artist, status, position, duration, rate, artHash,
             new(c.IsPlayEnabled, c.IsPauseEnabled, c.IsPlayPauseToggleEnabled, c.IsPreviousEnabled, c.IsNextEnabled, c.IsPlaybackPositionEnabled && duration > 0));
-        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), null));
+        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), Mixer(), null));
     }
     private static async Task<byte[]?> ReadArtwork(IRandomAccessStreamReference? thumbnail)
     {
@@ -130,6 +142,18 @@ public sealed class MediaBridge : IDisposable
         try
         {
             if (command.Name == "volume") return command.Value is { } v && double.IsFinite(v) && v >= 0 && v <= 1 && CoreAudio.Set((float)v) ? (true, null) : (false, "Громкость недоступна");
+            if (command.Name == "mixer-volume")
+            {
+                bool ok = command.Value is { } appVolume && double.IsFinite(appVolume) && appVolume >= 0 && appVolume <= 1 && CoreAudio.SetMixer(command.MixerId, (float)appVolume, null);
+                if (ok) lastMixer = DateTimeOffset.MinValue;
+                return ok ? (true, null) : (false, "Громкость приложения недоступна");
+            }
+            if (command.Name == "mixer-mute")
+            {
+                bool ok = command.Muted is { } muted && CoreAudio.SetMixer(command.MixerId, null, muted);
+                if (ok) lastMixer = DateTimeOffset.MinValue;
+                return ok ? (true, null) : (false, "Звук приложения недоступен");
+            }
             if (command.Name == "source")
             {
                 if (command.SourceId != null && !Latest.Sources.Any(s => s.Id == command.SourceId)) return (false, "Источник больше не доступен");

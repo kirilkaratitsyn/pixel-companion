@@ -2,6 +2,7 @@ package dev.pixelcompanion.app;
 
 import android.app.Activity;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
@@ -36,6 +37,7 @@ public final class MainActivity extends Activity {
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE);
         preferences = getSharedPreferences("connection", MODE_PRIVATE);
         getWindow().setStatusBarColor(Color.BLACK); getWindow().setNavigationBarColor(Color.BLACK);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
@@ -103,7 +105,13 @@ public final class MainActivity extends Activity {
             runOnUiThread(() -> {
                 if (destroyed || web == null || web.getUrl() == null || !sameOrigin(Uri.parse(web.getUrl()))) return;
                 WindowManager.LayoutParams attributes = getWindow().getAttributes();
-                attributes.screenBrightness = blank ? .01f : (float)Math.max(.02,Math.min(.6,brightness)); getWindow().setAttributes(attributes);
+                attributes.screenBrightness = blank ? .01f : (float)Math.max(.02,Math.min(1,brightness)); getWindow().setAttributes(attributes);
+            });
+        }
+        @JavascriptInterface public void orientation(boolean usbLeft) {
+            runOnUiThread(() -> {
+                if (destroyed || web == null || web.getUrl() == null || !sameOrigin(Uri.parse(web.getUrl()))) return;
+                setRequestedOrientation(usbLeft ? ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE : ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
             });
         }
     }

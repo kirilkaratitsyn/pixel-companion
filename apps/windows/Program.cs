@@ -33,7 +33,7 @@ internal static class Program
                         await media.Initialize();
                         File.AppendAllText(Path.Combine(options.DataDirectory, "startup.log"), "Starting server\n");
                         await server.Start();
-                        File.WriteAllText(Path.Combine(options.DataDirectory, "ready.json"), Wire.Serialize(new { port = options.Port, code = pairing.Code, pid = Environment.ProcessId, version = "0.1.0" }));
+                        File.WriteAllText(Path.Combine(options.DataDirectory, "ready.json"), Wire.Serialize(new { port = options.Port, code = pairing.Code, pid = Environment.ProcessId, version = "0.2.0" }));
                     }
                     catch (Exception e) { File.WriteAllText(Path.Combine(options.DataDirectory, "error.log"), e.ToString()); context.ExitThread(); }
                 };
@@ -95,7 +95,7 @@ internal sealed class AgentForm : Form
             if (autorun.Checked) key.SetValue("PixelCompanion", "\"" + Environment.ProcessPath + "\" --tray"); else key.DeleteValue("PixelCompanion", false);
         };
         layout.Controls.Add(autorun);
-        layout.Controls.Add(new Label { Text = "v0.1 · Для доверенной домашней сети. Данные идут по HTTP/WS.\nЗакрытие окна оставляет программу в трее.", AutoSize = true, Font = new Font("Segoe UI", 9), Margin = new Padding(0, 12, 0, 0) });
+        layout.Controls.Add(new Label { Text = "v0.2 · Для доверенной домашней сети. Данные идут по HTTP/WS.\nЗакрытие окна оставляет программу в трее.", AutoSize = true, Font = new Font("Segoe UI", 9), Margin = new Padding(0, 12, 0, 0) });
         tray = new NotifyIcon { Icon = SystemIcons.Application, Text = "Pixel Companion", Visible = true };
         var menu = new ContextMenuStrip();
         menu.Items.Add("Открыть", null, (_, _) => Restore());

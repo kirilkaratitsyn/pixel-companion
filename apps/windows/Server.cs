@@ -56,7 +56,7 @@ public sealed class Server(Pairing pairing, MediaBridge media, int port, bool lo
             catch (JsonException) { return Results.BadRequest(); }
         });
         app.Map("/ws", Socket);
-        foreach (var (name, contentType) in new[] { ("index.html", "text/html; charset=utf-8"), ("app.js", "text/javascript; charset=utf-8"), ("style.css", "text/css; charset=utf-8") })
+        foreach (var (name, contentType) in new[] { ("index.html", "text/html; charset=utf-8"), ("app.js", "text/javascript; charset=utf-8"), ("style.css", "text/css; charset=utf-8"), ("mixer.css", "text/css; charset=utf-8") })
         {
             string file = Path.Combine(AppContext.BaseDirectory, "web", name);
             app.MapGet(name == "index.html" ? "/" : "/" + name, () => Results.File(file, contentType));

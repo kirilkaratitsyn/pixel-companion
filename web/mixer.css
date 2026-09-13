@@ -1,0 +1,85 @@
+.settings-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.mixer-panel {
+  justify-content: flex-start !important;
+  overflow-y: auto;
+  padding-bottom: 12px;
+}
+
+.master-volume {
+  display: grid;
+  flex: 0 0 auto;
+  gap: 0;
+}
+
+.mixer-panel .volume-number {
+  font-size: 42px;
+}
+
+.mixer-heading {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.mixer-list {
+  display: grid;
+  gap: 9px;
+}
+
+.mixer-item {
+  display: grid;
+  gap: 0;
+  padding: 7px 13px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.mixer-item.active {
+  border-color: #435248;
+}
+
+.mixer-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 34px;
+}
+
+.mixer-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mixer-value {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.mixer-mute {
+  min-height: 34px;
+  padding: 4px 10px;
+  color: var(--muted);
+  background: #171e19;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+}
+
+.mixer-mute[aria-pressed="true"] {
+  color: #deb5a0;
+}
+
+.mixer-slider {
+  min-height: 34px;
+}
+
+@media (max-width: 540px) and (orientation: portrait) {
+  .settings-grid {
+    grid-template-columns: 1fr;
+  }
+}
