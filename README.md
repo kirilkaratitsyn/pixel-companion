@@ -4,6 +4,8 @@
 
 **v0.1 — рабочий исходный код прототипа и сборки для испытаний.** Это не только визуальный макет. Windows получает медиасессии через GSMTC, а интерфейс работает с настоящим WebSocket-сервером. На физическом Pixel сборка ещё не проверена.
 
+![Интерфейс Pixel Companion в горизонтальном режиме](docs/ui-preview.png)
+
 ## Что входит
 
 - Windows-программа в трее: текущий источник Windows или ручной выбор приложения, название, исполнитель, обложка, позиция и доступные команды.
@@ -49,8 +51,8 @@ APK также можно получить с работающего ПК: от�
 apps/windows/   C# / .NET 10 / WinForms + Kestrel + Windows.Media.Control
 apps/android/   Java / Android API 28+ / полноэкранный WebView
 web/            общий интерфейс без npm-зависимостей
-scripts/        сборка APK и настройка сетевого правила по запросу владельца
-tests/          тест привязки и настоящий Windows GSMTC integration fixture
+scripts/        воспроизводимая сборка Android APK без Android Studio
+tests/          логика привязки, интерфейс и Windows GSMTC integration fixture
 docs/           протокол
 ```
 

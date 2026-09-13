@@ -9,7 +9,7 @@
   let dragSeek = false, volumeDrag = false, manualBlank = false;
   const pending = new Map();
   const fmt = seconds => { const s = Math.max(0, Math.floor(seconds)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
-  const native = (blank) => { try { if (window.PixelNative) window.PixelNative.display(blank, Math.max(.02, config.brightness / 100) * (performance.now() - lastTouch > 30000 ? .65 : 1)); else document.documentElement.style.setProperty('--brightness', Math.max(.15, config.brightness / 60)); } catch (_) {} };
+  const native = (blank) => { try { if (window.PixelNative) window.PixelNative.display(blank, Math.max(.02, config.brightness / 100) * (performance.now() - lastTouch > 30000 ? .65 : 1)); else document.documentElement.style.setProperty('--brightness', .5 + .5 * Math.min(1, config.brightness / 60)); } catch (_) {} };
   function toast(message) { $('toast').textContent = message; $('toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => $('toast').hidden = true, 4000); }
   function closePanel() { $('overlay').hidden = true; panel = ''; clearTimeout(panelTimer); }
   function setSleeping(value) { if (sleeping === value) return; sleeping = value; $('wake').hidden = !value; if (value) closePanel(); native(value); }
