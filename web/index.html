@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#000000"><title>Pixel Companion</title><link rel="stylesheet" href="/style.css"></head>
+<body>
+<main id="app">
+  <header><button id="source" class="quiet" disabled aria-label="Источник музыки"><span class="dot"></span><span id="source-name">Pixel Companion</span><span aria-hidden="true">⌄</span></button><span id="status" role="status">Подключение…</span></header>
+  <section id="music" hidden aria-label="Текущий трек">
+    <div class="cover"><img id="art" alt="Обложка альбома" hidden><div id="art-placeholder" aria-hidden="true">♪</div></div>
+    <div class="track"><button id="title" class="title" aria-label="Полное название"></button><div id="artist"></div>
+      <input id="seek" type="range" min="0" max="1000" value="0" step="1" aria-label="Позиция воспроизведения"><div class="timecodes"><span id="position">0:00</span><span id="duration">—</span></div>
+      <div class="transport">
+        <button id="previous" class="icon" aria-label="Предыдущий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5v14M18 5L8 12l10 7Z"/></svg></button>
+        <button id="play" class="icon primary" aria-label="Воспроизвести"><svg id="play-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7Z"/></svg></button>
+        <button id="next" class="icon" aria-label="Следующий трек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 5v14M6 5l10 7-10 7Z"/></svg></button>
+      </div>
+    </div>
+  </section>
+  <section id="empty"><div id="empty-clock">—:—</div><div id="empty-message">Подключение к компьютеру</div></section>
+  <footer><time id="clock">—:—</time><span id="connection-name"></span><div class="tools"><button id="volume-open" class="quiet" disabled aria-label="Громкость компьютера"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 4 5 9H2v6h3l6 5Z M15 8q5 4 0 8 M18 4q9 8 0 16"/></svg><span id="volume-value">—</span></button><button id="settings" class="icon" aria-label="Настройки"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 7h18M3 17h18"/><circle cx="8" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></svg></button></div></footer>
+</main>
+<section id="pairing" hidden aria-label="Привязка к компьютеру"><div class="pair-card"><div class="brand">Pixel Companion</div><h1>Подключить компьютер</h1><p>Введите код из окна Pixel Companion на Windows.</p><form id="pair-form"><label>Одноразовый код<input id="pair-code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" placeholder="6 цифр" required></label><button class="action" id="pair-button" type="submit">Подключить</button></form><p id="pair-error" role="alert"></p><small>Локальный прототип · доверенная домашняя сеть</small></div></section>
+<section id="overlay" hidden aria-label="Панель управления"><div class="overlay-header"><h2 id="overlay-title"></h2><button id="close" class="icon" aria-label="Закрыть">×</button></div><div id="overlay-body"></div></section>
+<button id="wake" hidden aria-label="Разбудить экран"></button><div id="toast" role="status" hidden></div>
+<script src="/app.js"></script></body></html>

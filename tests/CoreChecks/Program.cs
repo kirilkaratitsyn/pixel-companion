@@ -1,0 +1,22 @@
+using PixelCompanion;
+var directory = Path.Combine(Path.GetTempPath(), "pixel-companion-check-" + Guid.NewGuid());
+void Check(bool ok, string name) { if (!ok) throw new Exception(name); Console.WriteLine("PASS " + name); }
+var pairing = new Pairing(directory);
+string firstCode = pairing.Code;
+Check(pairing.Pair("000000").Token == null, "invalid PIN");
+var result = pairing.Pair(firstCode);
+Check(result.Token?.Length == 64 && pairing.Valid(result.Token), "random token and validation");
+Check(pairing.Pair(firstCode).Token == null, "single-use code");
+Check(!File.ReadAllText(Path.Combine(directory,"devices.json")).Contains(result.Token!), "raw token not on server disk");
+var restored = new Pairing(directory);
+Check(restored.Valid(result.Token), "persistent token hash");
+restored.Revoke(); Check(!restored.Valid(result.Token), "revoke");
+for(int i=0;i<5;i++)restored.Pair("000000");
+Check(restored.Pair(restored.Code).Token == null, "rate limit blocks brute force");
+var limits = new Pairing(Path.Combine(directory,"limits"));
+for(int i=0;i<8;i++)Check(limits.Pair(limits.Code).Token != null,"device " + i);
+Check(limits.Pair(limits.Code).Token == null,"device limit");
+File.Delete(Path.Combine(directory,"devices.json"));
+File.Delete(Path.Combine(directory,"limits","devices.json"));
+Directory.Delete(Path.Combine(directory,"limits"));
+Directory.Delete(directory);
