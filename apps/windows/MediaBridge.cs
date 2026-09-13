@@ -1,6 +1,3 @@
-using System.Drawing.Drawing2D;
-using System.Drawing.Imaging;
-using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
@@ -8,7 +5,7 @@ using Microsoft.Win32;
 
 namespace PixelCompanion;
 
-public sealed class MediaBridge : IDisposable
+public sealed class MediaBridge(BrowserController browser) : IDisposable
 {
     private GlobalSystemMediaTransportControlsSessionManager? manager;
     private GlobalSystemMediaTransportControlsSession? session;
@@ -18,16 +15,17 @@ public sealed class MediaBridge : IDisposable
     private string? selected, sessionId, artHash;
     private string title = "", artist = "";
     private long revision;
-    private byte[]? art;
+    private ArtworkPayload? artwork;
+    private BrowserArtworkCandidate? browserArtwork;
     private DateTimeOffset lastMetadata = DateTimeOffset.MinValue;
     private DateTimeOffset lastMixer = DateTimeOffset.MinValue;
     private MixerApp[] mixer = [];
     private StateMessage latest = Empty(null);
     public StateMessage Latest => Volatile.Read(ref latest);
-    public byte[]? Artwork => Volatile.Read(ref art);
+    public ArtworkPayload? Artwork => Volatile.Read(ref artwork);
     private static readonly Capabilities None = new(false, false, false, false, false, false);
     private static StateMessage Empty(string? error) => new("state", 1, Environment.MachineName, false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, [], ShortcutLauncher.Items, error);
+        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, [], ShortcutLauncher.Items, [], error);
 
     private MixerApp[] Mixer()
     {
@@ -87,23 +85,25 @@ public sealed class MediaBridge : IDisposable
             Detach();
             session = selected == null ? manager.GetCurrentSession() : sessions.FirstOrDefault(s => s.SourceAppUserModelId == selected);
             sessionId = session == null ? null : Guid.NewGuid().ToString("N");
-            title = artist = ""; artHash = null; Volatile.Write(ref art, null);
+            title = artist = ""; artHash = null; browserArtwork = null; Volatile.Write(ref artwork, null);
             revision++; Interlocked.Exchange(ref metadataDirty, 1);
             if (session != null) { session.MediaPropertiesChanged += MetadataChanged; session.PlaybackInfoChanged += PlaybackChanged; session.TimelinePropertiesChanged += TimelineChanged; }
         }
         if (session == null)
         {
-            Volatile.Write(ref latest, Empty(null) with { Locked = locked, Sources = sources, SelectedSource = selected, Volume = CoreAudio.Get(), Mixer = Mixer() });
+            Volatile.Write(ref latest, Empty(null) with { Locked = locked, Sources = sources, SelectedSource = selected, Volume = CoreAudio.Get(), Mixer = Mixer(), Queue = browser.Tracks });
             return;
         }
         if (Interlocked.Exchange(ref metadataDirty, 0) != 0 || DateTimeOffset.UtcNow - lastMetadata > TimeSpan.FromSeconds(15))
         {
             var props = await session.TryGetMediaPropertiesAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             var newTitle = props.Title ?? ""; var newArtist = props.Artist ?? "";
-            var newArt = await ReadArtwork(props.Thumbnail);
-            var newHash = newArt == null ? null : Convert.ToHexString(SHA256.HashData(newArt));
+            var nativeArt = await ReadArtwork(props.Thumbnail);
+            var candidate = browserArtwork;
+            var newArt = candidate != null && SameTrack(candidate.Title, newTitle) ? candidate.Artwork : nativeArt;
+            var newHash = newArt?.Hash;
             if (newTitle != title || newArtist != artist || newHash != artHash) revision++;
-            title = newTitle; artist = newArtist; artHash = newHash; Volatile.Write(ref art, newArt);
+            title = newTitle; artist = newArtist; artHash = newHash; Volatile.Write(ref artwork, newArt);
             lastMetadata = DateTimeOffset.UtcNow;
         }
         var playback = session.GetPlaybackInfo(); var timeline = session.GetTimelineProperties(); var c = playback.Controls;
@@ -116,9 +116,9 @@ public sealed class MediaBridge : IDisposable
         position = duration > 0 ? Math.Clamp(position, 0, duration) : Math.Max(0, position);
         var media = new MediaState(sessionId, revision, DisplayName(session.SourceAppUserModelId), title, artist, status, position, duration, rate, artHash,
             new(c.IsPlayEnabled, c.IsPauseEnabled, c.IsPlayPauseToggleEnabled, c.IsPreviousEnabled, c.IsNextEnabled, c.IsPlaybackPositionEnabled && duration > 0));
-        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), Mixer(), ShortcutLauncher.Items, null));
+        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), Mixer(), ShortcutLauncher.Items, browser.Tracks, null));
     }
-    private static async Task<byte[]?> ReadArtwork(IRandomAccessStreamReference? thumbnail)
+    private static async Task<ArtworkPayload?> ReadArtwork(IRandomAccessStreamReference? thumbnail)
     {
         if (thumbnail == null) return null;
         try
@@ -128,58 +128,45 @@ public sealed class MediaBridge : IDisposable
             using var reader = new DataReader(stream.GetInputStreamAt(0));
             await reader.LoadAsync((uint)stream.Size).AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             byte[] bytes = new byte[(int)stream.Size]; reader.ReadBytes(bytes);
-            using var input = new MemoryStream(bytes); using var original = Image.FromStream(input);
-            double scale = 1024d / Math.Max(original.Width, original.Height);
-            int width = Math.Max(1, (int)Math.Round(original.Width * scale));
-            int height = Math.Max(1, (int)Math.Round(original.Height * scale));
-            using var resized = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(resized))
-            {
-                g.Clear(Color.Black); g.CompositingQuality = CompositingQuality.HighQuality; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.SmoothingMode = SmoothingMode.HighQuality; g.PixelOffsetMode = PixelOffsetMode.HighQuality; g.DrawImage(original, 0, 0, width, height);
-            }
-            if (scale > 1.01) Sharpen(resized);
-            using var output = new MemoryStream();
-            var codec = ImageCodecInfo.GetImageEncoders().First(item => item.FormatID == ImageFormat.Jpeg.Guid);
-            using var quality = new EncoderParameters(1); quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 92L);
-            resized.Save(output, codec, quality); return output.ToArray();
+            return CreateArtwork(bytes);
         }
         catch { return null; } // Artwork is optional; it must never disable transport controls.
     }
-    private static void Sharpen(Bitmap bitmap)
+    public async Task<bool> SetBrowserArtwork(string? uploadTitle, string? uploadArtist, ArtworkPayload payload)
     {
-        var bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
-        var data = bitmap.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
+        if (string.IsNullOrWhiteSpace(uploadTitle)) return false;
+        await gate.WaitAsync();
         try
         {
-            if (data.Stride <= 0) return;
-            int size = data.Stride * data.Height;
-            var source = new byte[size]; var output = new byte[size];
-            Marshal.Copy(data.Scan0, source, 0, size); System.Buffer.BlockCopy(source, 0, output, 0, size);
-            const double amount = .42;
-            for (int y = 1; y < data.Height - 1; y++)
-            {
-                for (int x = 1; x < data.Width - 1; x++)
-                {
-                    int pixel = y * data.Stride + x * 3;
-                    for (int channel = 0; channel < 3; channel++)
-                    {
-                        int index = pixel + channel;
-                        double average = (source[index - 3] + source[index + 3] + source[index - data.Stride] + source[index + data.Stride]) / 4d;
-                        output[index] = (byte)Math.Clamp(Math.Round(source[index] + amount * (source[index] - average)), 0, 255);
-                    }
-                }
-            }
-            Marshal.Copy(output, 0, data.Scan0, size);
+            if (session == null || DisplayName(session.SourceAppUserModelId) is not ("Chrome" or "Edge") || !SameTrack(title, uploadTitle)) return false;
+            browserArtwork = new(uploadTitle.Trim(), uploadArtist?.Trim() ?? "", payload);
+            if (payload.Hash != artHash) revision++;
+            artHash = payload.Hash; Volatile.Write(ref artwork, payload);
+            var snapshot = latest;
+            if (snapshot.Media.SessionId == sessionId && SameTrack(snapshot.Media.Title, uploadTitle))
+                Volatile.Write(ref latest, snapshot with { Timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), Media = snapshot.Media with { Revision = revision, ArtworkHash = payload.Hash } });
+            return true;
         }
-        finally { bitmap.UnlockBits(data); }
+        finally { gate.Release(); }
     }
+    public static ArtworkPayload? CreateArtwork(byte[] bytes)
+    {
+        if (bytes.Length < 12 || bytes.Length > 8 * 1024 * 1024) return null;
+        string? contentType = bytes[0] == 0xff && bytes[1] == 0xd8 && bytes[2] == 0xff ? "image/jpeg" :
+            bytes.AsSpan(0, 8).SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }) ? "image/png" :
+            bytes.AsSpan(0, 4).SequenceEqual("RIFF"u8) && bytes.AsSpan(8, 4).SequenceEqual("WEBP"u8) ? "image/webp" : null;
+        return contentType == null ? null : new(bytes, contentType, Convert.ToHexString(SHA256.HashData(bytes)));
+    }
+    private static bool SameTrack(string left, string right) => string.Equals(Normalize(left), Normalize(right), StringComparison.OrdinalIgnoreCase);
+    private static string Normalize(string value) => string.Concat(value.Where(c => !char.IsWhiteSpace(c))).Trim();
+    private sealed record BrowserArtworkCandidate(string Title, string Artist, ArtworkPayload Artwork);
     public async Task<(bool Ok, string? Error)> Command(ClientCommand command)
     {
         await gate.WaitAsync();
         try
         {
             if (command.Name == "launch") return ShortcutLauncher.Launch(command.ShortcutId) ? (true, null) : (false, "Не удалось открыть приложение");
+            if (command.Name == "browser-play") return browser.Play(command.BrowserTrackId) ? (true, null) : (false, "Трек YouTube Music больше не доступен");
             if (command.Name == "volume") return command.Value is { } v && double.IsFinite(v) && v >= 0 && v <= 1 && CoreAudio.Set((float)v) ? (true, null) : (false, "Громкость недоступна");
             if (command.Name == "mixer-volume")
             {

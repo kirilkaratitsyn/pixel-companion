@@ -130,6 +130,32 @@
   white-space: nowrap;
 }
 
+.music-list {
+  display: grid;
+  gap: 7px;
+  max-width: 720px;
+  margin: 0 auto;
+}
+
+.music-list .row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  text-align: left;
+}
+
+.music-list .row strong,
+.music-list .row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.music-list .row.active {
+  color: var(--accent);
+  border-color: #416b4b;
+}
+
 @media (max-width: 540px) and (orientation: portrait) {
   .settings-grid {
     grid-template-columns: 1fr;

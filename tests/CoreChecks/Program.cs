@@ -16,6 +16,12 @@ Check(restored.Pair(restored.Code).Token == null, "rate limit blocks brute force
 var limits = new Pairing(Path.Combine(directory,"limits"));
 for(int i=0;i<8;i++)Check(limits.Pair(limits.Code).Token != null,"device " + i);
 Check(limits.Pair(limits.Code).Token == null,"device limit");
+var browser = new BrowserController();
+var queue = new[] { new BrowserTrack("track-1", "First track", "Artist", true), new BrowserTrack("track-2", "Second track", "Artist", false) };
+Check(browser.Update(queue, 0) == null && browser.Tracks.Length == 2, "browser queue update");
+Check(!browser.Play("missing") && browser.Play("track-2"), "browser queue allowlist");
+var browserCommand = browser.Update(queue, 0);
+Check(browserCommand is { Name: "play-track", TrackId: "track-2" } && browser.Update(queue, browserCommand.Sequence) == null, "browser play command sequence");
 File.Delete(Path.Combine(directory,"devices.json"));
 File.Delete(Path.Combine(directory,"limits","devices.json"));
 Directory.Delete(Path.Combine(directory,"limits"));

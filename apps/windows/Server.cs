@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 
 namespace PixelCompanion;
 
-public sealed class Server(Pairing pairing, MediaBridge media, int port, bool loopback) : IAsyncDisposable
+public sealed class Server(Pairing pairing, MediaBridge media, BrowserController browser, int port, bool loopback) : IAsyncDisposable
 {
     private WebApplication? app;
     private readonly CancellationTokenSource stop = new();
@@ -32,7 +32,7 @@ public sealed class Server(Pairing pairing, MediaBridge media, int port, bool lo
     {
         var builder = WebApplication.CreateSlimBuilder();
         builder.Logging.ClearProviders();
-        builder.WebHost.UseKestrel(o => { o.Limits.MaxRequestBodySize = 4096; o.Listen(loopback ? IPAddress.Loopback : IPAddress.Any, port); });
+        builder.WebHost.UseKestrel(o => { o.Limits.MaxRequestBodySize = 8 * 1024 * 1024; o.Listen(loopback ? IPAddress.Loopback : IPAddress.Any, port); });
         app = builder.Build();
         app.Use(async (ctx, next) =>
         {
@@ -55,6 +55,39 @@ public sealed class Server(Pairing pairing, MediaBridge media, int port, bool lo
             }
             catch (JsonException) { return Results.BadRequest(); }
         });
+        app.MapMethods("/api/browser-artwork", ["OPTIONS"], (HttpContext ctx) =>
+        {
+            if (!BrowserExtensionRequest(ctx)) return Results.StatusCode(403);
+            AddExtensionCors(ctx); return Results.NoContent();
+        });
+        app.MapPost("/api/browser-artwork", async (HttpContext ctx) =>
+        {
+            if (!BrowserExtensionRequest(ctx) || ctx.Request.Headers["X-Pixel-Companion"] != "browser-artwork-v1") return Results.StatusCode(403);
+            AddExtensionCors(ctx);
+            try
+            {
+                string? title = DecodeHeader(ctx.Request.Headers["X-Pixel-Companion-Title"]);
+                string? artist = DecodeHeader(ctx.Request.Headers["X-Pixel-Companion-Artist"]);
+                if (title == null || ctx.Request.ContentLength is null or <= 0 or > 8 * 1024 * 1024) return Results.BadRequest();
+                using var output = new MemoryStream((int)ctx.Request.ContentLength.Value);
+                await ctx.Request.Body.CopyToAsync(output, ctx.RequestAborted);
+                var payload = MediaBridge.CreateArtwork(output.ToArray());
+                return payload != null && await media.SetBrowserArtwork(title, artist, payload) ? Results.Ok(new { hash = payload.Hash }) : Results.BadRequest();
+            }
+            catch (Exception e) when (e is FormatException or DecoderFallbackException or IOException or TaskCanceledException) { return Results.BadRequest(); }
+        });
+        app.MapPost("/api/browser-state", async (HttpContext ctx) =>
+        {
+            if (!BrowserExtensionRequest(ctx) || ctx.Request.Headers["X-Pixel-Companion"] != "browser-state-v1") return Results.StatusCode(403);
+            AddExtensionCors(ctx);
+            try
+            {
+                var body = await ctx.Request.ReadFromJsonAsync<BrowserStateRequest>();
+                if (body == null) return Results.BadRequest();
+                return Results.Ok(new { command = browser.Update(body.Tracks, body.AfterSequence) });
+            }
+            catch (JsonException) { return Results.BadRequest(); }
+        });
         app.Map("/ws", Socket);
         foreach (var (name, contentType) in new[] { ("index.html", "text/html; charset=utf-8"), ("app.js", "text/javascript; charset=utf-8"), ("style.css", "text/css; charset=utf-8"), ("mixer.css", "text/css; charset=utf-8") })
         {
@@ -72,6 +105,26 @@ public sealed class Server(Pairing pairing, MediaBridge media, int port, bool lo
         string? origin = ctx.Request.Headers.Origin;
         // Native clients may omit Origin; browser clients must use the server's own origin.
         return string.IsNullOrEmpty(origin) || origin == $"http://{ctx.Request.Host}";
+    }
+    private static bool BrowserExtensionRequest(HttpContext ctx)
+    {
+        var address = ctx.Connection.RemoteIpAddress;
+        if (address == null || !IPAddress.IsLoopback(address.IsIPv4MappedToIPv6 ? address.MapToIPv4() : address)) return false;
+        string origin = ctx.Request.Headers.Origin.ToString();
+        return string.IsNullOrEmpty(origin) || origin.StartsWith("chrome-extension://", StringComparison.Ordinal) || origin.StartsWith("moz-extension://", StringComparison.Ordinal);
+    }
+    private static void AddExtensionCors(HttpContext ctx)
+    {
+        string origin = ctx.Request.Headers.Origin.ToString();
+        if (!string.IsNullOrEmpty(origin)) ctx.Response.Headers.AccessControlAllowOrigin = origin;
+        ctx.Response.Headers.AccessControlAllowMethods = "POST, OPTIONS";
+        ctx.Response.Headers.AccessControlAllowHeaders = "Content-Type, X-Pixel-Companion, X-Pixel-Companion-Title, X-Pixel-Companion-Artist";
+    }
+    private static string? DecodeHeader(string? encoded)
+    {
+        if (string.IsNullOrEmpty(encoded)) return null;
+        byte[] bytes = Convert.FromBase64String(encoded);
+        return bytes.Length is > 0 and <= 2048 ? new UTF8Encoding(false, true).GetString(bytes) : null;
     }
     private async Task Socket(HttpContext ctx)
     {
@@ -103,12 +156,12 @@ public sealed class Server(Pairing pairing, MediaBridge media, int port, bool lo
                         await Emit(state);
                         if (state.Media.ArtworkHash != lastArt)
                         {
-                            var bytes = media.Artwork;
+                            var artwork = media.Artwork;
                             // A metadata update can swap image bytes between these two reads.
                             // Send only a matching image/hash pair, or retry on the next snapshot.
-                            if (state.Media.ArtworkHash == null || bytes != null && Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(bytes)) == state.Media.ArtworkHash)
+                            if (state.Media.ArtworkHash == null || artwork != null && artwork.Hash == state.Media.ArtworkHash)
                             {
-                                await Emit(new { type = "artwork", hash = state.Media.ArtworkHash, data = bytes == null ? null : "data:image/jpeg;base64," + Convert.ToBase64String(bytes) });
+                                await Emit(new { type = "artwork", hash = state.Media.ArtworkHash, data = artwork == null ? null : $"data:{artwork.ContentType};base64," + Convert.ToBase64String(artwork.Bytes) });
                                 lastArt = state.Media.ArtworkHash;
                             }
                         }

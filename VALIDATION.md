@@ -1,4 +1,4 @@
-# Validation / v0.3
+# Validation / v0.4
 
 ## Confirmed locally
 
@@ -6,9 +6,10 @@
 - Android API 35 compilation completed; APK signature verification succeeded with one signer and v3 signing (minimum API 28).
 - A previous local agent build accessed a real browser GSMTC session: title, artist, thumbnail, playback timeline, control capabilities and endpoint volume were received over WebSocket.
 - A Pause command reached an independent Windows media fixture and its callback recorded `Pause`.
-- v0.3 launched on the development Windows desktop, served `/health`, enumerated real Core Audio sessions for Chrome, Overwatch, Steam, Telegram and system sounds, and accepted a same-level per-application volume command.
-- A real Chrome GSMTC session supplied a small album thumbnail. The Windows agent converted it locally to a 1024 × 1024 JPEG before WebSocket delivery; no track metadata was sent to an external artwork service.
+- v0.4 launched on the development Windows desktop, served `/health`, enumerated real Core Audio sessions for Chrome, Overwatch, Discord, Steam, Telegram and system sounds, and accepted a same-level per-application volume command.
+- A real YouTube Music player exposed a 60 × 60 `yt3.googleusercontent.com` image URL whose 1200 × 1200 variant returned a 132,201-byte JPEG. The v0.4 loopback upload accepted those exact bytes, matched them to the real Chrome track `Heaven`, and delivered the same content type, byte count and 1200 × 1200 dimensions over WebSocket without resizing or recompression.
 - The live state advertised only the fixed Discord, YouTube Music and Spotify shortcuts. An unknown shortcut identifier was rejected.
+- The native browser bridge accepted a two-item queue, exposed it in state, accepted only an id from that queue, returned a sequenced `play-track` command to the extension poll and stopped returning it after acknowledgement. The browser UI contract selected the second queue item and emitted `browser-play` with its exact id.
 - The real HTML/CSS/JavaScript UI passed its browser contract suite in Chromium: pairing, simplified labels, quick-launch deck, reconnect state, play/pause, next, seek, master and per-app volume, app mute, 100% brightness, USB side selection, never-sleep default, OLED blank/wake behaviour, unsupported controls, safe rendering of hostile metadata, clock, offline mode and the 320 px layout.
 - Java reports use of deprecated system UI APIs. They are retained to support Pixel 4a / Android 13; the native APK still requires a physical-device check.
 

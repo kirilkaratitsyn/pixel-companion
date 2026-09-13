@@ -17,9 +17,10 @@ internal static class Program
         try
         {
             if (args.Contains("--media-fixture")) { MediaFixture.Run(options.DataDirectory); return; }
-            using var media = new MediaBridge();
+            var browser = new BrowserController();
+            using var media = new MediaBridge(browser);
             var pairing = new Pairing(options.DataDirectory);
-            var server = new Server(pairing, media, options.Port, options.Loopback);
+            var server = new Server(pairing, media, browser, options.Port, options.Loopback);
             try
             {
                 using var context = options.Headless ? new ApplicationContext() : new ApplicationContext(new AgentForm(pairing, media, server, options));
@@ -33,7 +34,7 @@ internal static class Program
                         await media.Initialize();
                         File.AppendAllText(Path.Combine(options.DataDirectory, "startup.log"), "Starting server\n");
                         await server.Start();
-                        File.WriteAllText(Path.Combine(options.DataDirectory, "ready.json"), Wire.Serialize(new { port = options.Port, code = pairing.Code, pid = Environment.ProcessId, version = "0.3.0" }));
+                        File.WriteAllText(Path.Combine(options.DataDirectory, "ready.json"), Wire.Serialize(new { port = options.Port, code = pairing.Code, pid = Environment.ProcessId, version = "0.4.0" }));
                     }
                     catch (Exception e) { File.WriteAllText(Path.Combine(options.DataDirectory, "error.log"), e.ToString()); context.ExitThread(); }
                 };
@@ -86,6 +87,8 @@ internal sealed class AgentForm : Form
         Button("Новый код", pairing.Renew);
         Button("Открыть пульт", () => Process.Start(new ProcessStartInfo(url) { UseShellExecute = true }));
         Button("Копировать адрес", () => Clipboard.SetText(url));
+        string extensionPath = Path.Combine(AppContext.BaseDirectory, "browser-extension");
+        if (Directory.Exists(extensionPath)) Button("Папка HD-обложек", () => Process.Start(new ProcessStartInfo(extensionPath) { UseShellExecute = true }));
         layout.Controls.Add(buttons);
         var autorun = new CheckBox { Text = "Запускать вместе с Windows", AutoSize = true, Margin = new Padding(0, 12, 0, 0) };
         using (var key = Registry.CurrentUser.OpenSubKey(@"Software\Microsoft\Windows\CurrentVersion\Run")) autorun.Checked = key?.GetValue("PixelCompanion") != null;
@@ -95,7 +98,7 @@ internal sealed class AgentForm : Form
             if (autorun.Checked) key.SetValue("PixelCompanion", "\"" + Environment.ProcessPath + "\" --tray"); else key.DeleteValue("PixelCompanion", false);
         };
         layout.Controls.Add(autorun);
-        layout.Controls.Add(new Label { Text = "v0.3 · Для доверенной домашней сети. Данные идут по HTTP/WS.\nЗакрытие окна оставляет программу в трее.", AutoSize = true, Font = new Font("Segoe UI", 9), Margin = new Padding(0, 12, 0, 0) });
+        layout.Controls.Add(new Label { Text = "v0.4 · Для доверенной домашней сети. Данные идут по HTTP/WS.\nЗакрытие окна оставляет программу в трее.", AutoSize = true, Font = new Font("Segoe UI", 9), Margin = new Padding(0, 12, 0, 0) });
         tray = new NotifyIcon { Icon = SystemIcons.Application, Text = "Pixel Companion", Visible = true };
         var menu = new ContextMenuStrip();
         menu.Items.Add("Открыть", null, (_, _) => Restore());
