@@ -54,6 +54,8 @@ async function connection(token, expected = 'ready') {
     assert.equal((await command('seek',{value:-1})).ok,false);checks.push('invalid seek rejected');
     if(snapshot.volume!=null){assert.equal((await command('volume',{value:snapshot.volume})).ok,true);checks.push('Core Audio same-level volume command');}
     if(snapshot.mixer?.length){const app=snapshot.mixer[0];assert.equal((await command('mixer-volume',{mixerId:app.id,value:app.volume})).ok,true);checks.push('Core Audio per-app same-level volume command');}
+    assert.ok(snapshot.shortcuts?.some(shortcut=>shortcut.id==='discord'));
+    assert.equal((await command('launch',{shortcutId:'not-allowed'})).ok,false);checks.push('fixed quick-launch allowlist');
     const reconnect=await connection(token);await reconnect.wait(m=>m.type==='state');checks.push('saved token reconnect');
     fs.writeFileSync(path.join(agentDir,'test-token.txt'),token);
     console.log(JSON.stringify({passed:true,checks,seekSupported:snapshot.media.controls.seek,artworkPresent:!!snapshot.media.artworkHash},null,2));

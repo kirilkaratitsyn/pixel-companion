@@ -1,5 +1,6 @@
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
 using System.Security.Cryptography;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
@@ -26,7 +27,7 @@ public sealed class MediaBridge : IDisposable
     public byte[]? Artwork => Volatile.Read(ref art);
     private static readonly Capabilities None = new(false, false, false, false, false, false);
     private static StateMessage Empty(string? error) => new("state", 1, Environment.MachineName, false, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
-        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, [], error);
+        new(null, 0, "", "", "", "none", 0, 0, 1, null, None), [], null, null, [], ShortcutLauncher.Items, error);
 
     private MixerApp[] Mixer()
     {
@@ -115,7 +116,7 @@ public sealed class MediaBridge : IDisposable
         position = duration > 0 ? Math.Clamp(position, 0, duration) : Math.Max(0, position);
         var media = new MediaState(sessionId, revision, DisplayName(session.SourceAppUserModelId), title, artist, status, position, duration, rate, artHash,
             new(c.IsPlayEnabled, c.IsPauseEnabled, c.IsPlayPauseToggleEnabled, c.IsPreviousEnabled, c.IsNextEnabled, c.IsPlaybackPositionEnabled && duration > 0));
-        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), Mixer(), null));
+        Volatile.Write(ref latest, new("state", 1, Environment.MachineName, locked, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), media, sources, selected, CoreAudio.Get(), Mixer(), ShortcutLauncher.Items, null));
     }
     private static async Task<byte[]?> ReadArtwork(IRandomAccessStreamReference? thumbnail)
     {
@@ -128,19 +129,57 @@ public sealed class MediaBridge : IDisposable
             await reader.LoadAsync((uint)stream.Size).AsTask().WaitAsync(TimeSpan.FromSeconds(3));
             byte[] bytes = new byte[(int)stream.Size]; reader.ReadBytes(bytes);
             using var input = new MemoryStream(bytes); using var original = Image.FromStream(input);
-            int width = Math.Max(1, (int)(original.Width * Math.Min(1, 384d / Math.Max(original.Width, original.Height))));
-            int height = Math.Max(1, (int)(original.Height * Math.Min(1, 384d / Math.Max(original.Width, original.Height))));
+            double scale = 1024d / Math.Max(original.Width, original.Height);
+            int width = Math.Max(1, (int)Math.Round(original.Width * scale));
+            int height = Math.Max(1, (int)Math.Round(original.Height * scale));
             using var resized = new Bitmap(width, height, PixelFormat.Format24bppRgb);
-            using (var g = Graphics.FromImage(resized)) { g.Clear(Color.Black); g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.DrawImage(original, 0, 0, width, height); }
-            using var output = new MemoryStream(); resized.Save(output, ImageFormat.Jpeg); return output.ToArray();
+            using (var g = Graphics.FromImage(resized))
+            {
+                g.Clear(Color.Black); g.CompositingQuality = CompositingQuality.HighQuality; g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality; g.PixelOffsetMode = PixelOffsetMode.HighQuality; g.DrawImage(original, 0, 0, width, height);
+            }
+            if (scale > 1.01) Sharpen(resized);
+            using var output = new MemoryStream();
+            var codec = ImageCodecInfo.GetImageEncoders().First(item => item.FormatID == ImageFormat.Jpeg.Guid);
+            using var quality = new EncoderParameters(1); quality.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 92L);
+            resized.Save(output, codec, quality); return output.ToArray();
         }
         catch { return null; } // Artwork is optional; it must never disable transport controls.
+    }
+    private static void Sharpen(Bitmap bitmap)
+    {
+        var bounds = new Rectangle(0, 0, bitmap.Width, bitmap.Height);
+        var data = bitmap.LockBits(bounds, ImageLockMode.ReadWrite, PixelFormat.Format24bppRgb);
+        try
+        {
+            if (data.Stride <= 0) return;
+            int size = data.Stride * data.Height;
+            var source = new byte[size]; var output = new byte[size];
+            Marshal.Copy(data.Scan0, source, 0, size); System.Buffer.BlockCopy(source, 0, output, 0, size);
+            const double amount = .42;
+            for (int y = 1; y < data.Height - 1; y++)
+            {
+                for (int x = 1; x < data.Width - 1; x++)
+                {
+                    int pixel = y * data.Stride + x * 3;
+                    for (int channel = 0; channel < 3; channel++)
+                    {
+                        int index = pixel + channel;
+                        double average = (source[index - 3] + source[index + 3] + source[index - data.Stride] + source[index + data.Stride]) / 4d;
+                        output[index] = (byte)Math.Clamp(Math.Round(source[index] + amount * (source[index] - average)), 0, 255);
+                    }
+                }
+            }
+            Marshal.Copy(output, 0, data.Scan0, size);
+        }
+        finally { bitmap.UnlockBits(data); }
     }
     public async Task<(bool Ok, string? Error)> Command(ClientCommand command)
     {
         await gate.WaitAsync();
         try
         {
+            if (command.Name == "launch") return ShortcutLauncher.Launch(command.ShortcutId) ? (true, null) : (false, "Не удалось открыть приложение");
             if (command.Name == "volume") return command.Value is { } v && double.IsFinite(v) && v >= 0 && v <= 1 && CoreAudio.Set((float)v) ? (true, null) : (false, "Громкость недоступна");
             if (command.Name == "mixer-volume")
             {

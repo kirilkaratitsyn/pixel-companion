@@ -1,1 +1,1 @@
-{"name":"pixel-companion-checks","private":true,"version":"0.2.0","scripts":{"test:web":"node tests/browser.cjs"},"devDependencies":{"playwright":"1.58.2"}}
+{"name":"pixel-companion-checks","private":true,"version":"0.3.0","scripts":{"test:web":"node tests/browser.cjs"},"devDependencies":{"playwright":"1.58.2"}}

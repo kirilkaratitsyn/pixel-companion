@@ -130,10 +130,31 @@
     }
     armVolumePanel();
   }
+  function buildDeck(body) {
+    body.replaceChildren(); body.className = 'deck-panel';
+    const grid = document.createElement('div'); grid.className = 'deck-grid'; body.append(grid);
+    const add = (glyph, title, caption, disabled, action) => {
+      const button = document.createElement('button'); button.className = 'deck-tile'; button.disabled = disabled;
+      const icon = document.createElement('span'); icon.className = 'deck-glyph'; icon.textContent = glyph;
+      const name = document.createElement('strong'); name.textContent = title;
+      const detail = document.createElement('small'); detail.textContent = caption;
+      button.append(icon, name, detail); button.addEventListener('click', action); grid.append(button);
+    };
+    const glyphs = { discord: 'D', 'youtube-music': '▶', spotify: '●' };
+    for (const shortcut of state?.shortcuts || []) add(glyphs[shortcut.id] || '↗', shortcut.name, 'Открыть на ПК', !online, () => command('launch', { shortcutId: shortcut.id }));
+    const media = state?.media, hasMedia = online && !!media?.sessionId;
+    add('◀', 'Предыдущий', 'Текущий плеер', !hasMedia || !media.controls.previous, () => command('previous'));
+    add(media?.status === 'playing' ? 'Ⅱ' : '▶', media?.status === 'playing' ? 'Пауза' : 'Играть', 'Текущий плеер', !hasMedia || !(media.controls.toggle || media.controls.play || media.controls.pause), () => command(media.controls.toggle ? 'toggle' : media.status === 'playing' ? 'pause' : 'play'));
+    add('▶', 'Следующий', 'Текущий плеер', !hasMedia || !media.controls.next, () => command('next'));
+    add('♫', 'Источник', media?.source || 'Автоматически', !online, () => openPanel('sources'));
+    add('≋', 'Микшер', 'Приложения Windows', !online, () => openPanel('volume'));
+  }
   function openPanel(kind) {
     closePanel(); panel = kind; $('overlay').hidden = false; const body = $('overlay-body'); body.className = '';
-    const titles = { volume: 'Микшер громкости', sources: 'Источник музыки', settings: 'Настройки', title: 'Сейчас играет' }; $('overlay-title').textContent = titles[kind];
-    if (kind === 'volume') {
+    const titles = { deck: 'Быстрые действия', volume: 'Микшер громкости', sources: 'Источник музыки', settings: 'Настройки', title: 'Трек' }; $('overlay-title').textContent = titles[kind];
+    if (kind === 'deck') {
+      buildDeck(body);
+    } else if (kind === 'volume') {
       buildVolumePanel(body);
     } else if (kind === 'sources') {
       body.replaceChildren();
@@ -142,8 +163,9 @@
         button.addEventListener('click', () => { command('source', { sourceId: source.id }); closePanel(); }); body.append(button);
       }
     } else if (kind === 'settings') {
-      body.innerHTML = '<div class="settings-grid"><label>Яркость · <span id="brightness-value"></span><input id="brightness" class="slider" type="range" min="5" max="100" aria-label="Яркость экрана"></label><label>USB-C<select id="usb-side"><option value="left">Слева</option><option value="right">Справа</option></select></label><label>Гасить при простое<select id="idle-delay"><option value="0">Никогда</option><option value="60">Через 1 минуту</option><option value="180">Через 3 минуты</option><option value="300">Через 5 минут</option></select></label></div><button id="blank-now" class="row">Чёрный экран сейчас</button><button id="fullscreen" class="row">Полный экран</button><button id="forget" class="row">Отвязать этот пульт</button><small>Pixel Companion 0.2 · экран остаётся включённым, пока работает приложение. При блокировке ПК показывается чёрный экран.</small>';
+      body.innerHTML = '<div class="settings-grid"><label>Яркость · <span id="brightness-value"></span><input id="brightness" class="slider" type="range" min="5" max="100" aria-label="Яркость экрана"></label><label>USB-C<select id="usb-side"><option value="left">Слева</option><option value="right">Справа</option></select></label><label>Гасить при простое<select id="idle-delay"><option value="0">Никогда</option><option value="60">Через 1 минуту</option><option value="180">Через 3 минуты</option><option value="300">Через 5 минут</option></select></label></div><button id="choose-source" class="row">Источник музыки <small id="settings-source"></small></button><button id="blank-now" class="row">Чёрный экран сейчас</button><button id="fullscreen" class="row">Полный экран</button><button id="forget" class="row">Отвязать этот пульт</button><small>Pixel Companion 0.3 · экран остаётся включённым, пока работает приложение. При блокировке ПК показывается чёрный экран.</small>';
       $('brightness').value = config.brightness; $('brightness-value').textContent = config.brightness + '%'; $('usb-side').value = config.usbLeft ? 'left' : 'right'; $('idle-delay').value = String(config.idle);
+      $('settings-source').textContent = state?.media?.source || 'Автоматически'; $('choose-source').addEventListener('click', () => openPanel('sources'));
       $('brightness').addEventListener('input', e => { config.brightness = Number(e.target.value); localStorage.setItem('brightness', config.brightness); $('brightness-value').textContent = config.brightness + '%'; native(sleeping); });
       $('usb-side').addEventListener('change', e => { config.usbLeft = e.target.value === 'left'; localStorage.setItem('usb-side', e.target.value); applyOrientation(); });
       $('idle-delay').addEventListener('change', e => { config.idle = Number(e.target.value); localStorage.setItem(IDLE_KEY, String(config.idle)); idleSince = performance.now(); if (config.idle === 0 && !state?.locked && !manualBlank) setSleeping(false); });
@@ -167,7 +189,7 @@
   $('next').addEventListener('click', () => command('next')); $('previous').addEventListener('click', () => command('previous'));
   $('seek').addEventListener('input', e => { dragSeek = true; $('position').textContent = fmt(Number(e.target.value) / 1000 * state.media.duration); $('seek').style.setProperty('--progress', Number(e.target.value) / 10 + '%'); });
   $('seek').addEventListener('change', e => { command('seek', { value: Number(e.target.value) / 1000 * state.media.duration }); dragSeek = false; });
-  $('source').addEventListener('click', () => openPanel('sources')); $('volume-open').addEventListener('click', () => openPanel('volume')); $('settings').addEventListener('click', () => openPanel('settings')); $('title').addEventListener('click', () => openPanel('title')); $('close').addEventListener('click', closePanel);
+  $('source').addEventListener('click', () => openPanel('sources')); $('deck').addEventListener('click', () => openPanel('deck')); $('volume-open').addEventListener('click', () => openPanel('volume')); $('settings').addEventListener('click', () => openPanel('settings')); $('title').addEventListener('click', () => openPanel('title')); $('close').addEventListener('click', closePanel);
   $('wake').addEventListener('click', e => { e.stopPropagation(); manualBlank = false; lastTouch = performance.now(); idleSince = lastTouch; wakeUntil = lastTouch + 15000; setSleeping(false); });
   document.addEventListener('pointerdown', () => { lastTouch = performance.now(); idleSince = lastTouch; }, { passive: true });
   document.addEventListener('keydown', e => { lastTouch = performance.now(); if (e.key === 'Escape') closePanel(); });
