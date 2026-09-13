@@ -44,6 +44,48 @@ public sealed class Server(Pairing pairing, MediaBridge media, BrowserController
         });
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(15) });
         app.MapGet("/health", () => Results.Json(new { name = "Pixel Companion", version = 1 }));
+        app.MapGet("/api/diagnostics", (HttpContext ctx) =>
+        {
+            var remote = ctx.Connection.RemoteIpAddress;
+            if (remote == null || !IPAddress.IsLoopback(remote.IsIPv4MappedToIPv6 ? remote.MapToIPv4() : remote)) return Results.StatusCode(403);
+            var state = media.Latest;
+            var art = media.Artwork;
+            int? width = null, height = null;
+            if (art != null && art.ContentType is "image/jpeg" or "image/png")
+            {
+                try
+                {
+                    using var stream = new MemoryStream(art.Bytes, false);
+                    using var image = Image.FromStream(stream, false, true);
+                    width = image.Width; height = image.Height;
+                }
+                catch { }
+            }
+            return Results.Json(new
+            {
+                state.Media.Source,
+                state.Media.Title,
+                state.Media.Artist,
+                state.Media.Status,
+                state.Media.ArtworkHash,
+                artworkBytes = art?.Bytes.Length,
+                artworkType = art?.ContentType,
+                artworkWidth = width,
+                artworkHeight = height,
+                queueItems = state.Queue.Length,
+                error = state.Error
+            });
+        });
+        app.MapMethods("/api/extension-health", ["OPTIONS"], (HttpContext ctx) =>
+        {
+            if (!BrowserExtensionRequest(ctx)) return Results.StatusCode(403);
+            AddExtensionCors(ctx); return Results.NoContent();
+        });
+        app.MapGet("/api/extension-health", (HttpContext ctx) =>
+        {
+            if (!BrowserExtensionRequest(ctx)) return Results.StatusCode(403);
+            AddExtensionCors(ctx); return Results.Json(new { ok = true, version = "0.4.1" });
+        });
         app.MapPost("/api/pair", async (HttpContext ctx) =>
         {
             if (!SameOrigin(ctx)) return Results.StatusCode(403);
@@ -117,8 +159,12 @@ public sealed class Server(Pairing pairing, MediaBridge media, BrowserController
     {
         string origin = ctx.Request.Headers.Origin.ToString();
         if (!string.IsNullOrEmpty(origin)) ctx.Response.Headers.AccessControlAllowOrigin = origin;
-        ctx.Response.Headers.AccessControlAllowMethods = "POST, OPTIONS";
+        ctx.Response.Headers.AccessControlAllowMethods = "GET, POST, OPTIONS";
         ctx.Response.Headers.AccessControlAllowHeaders = "Content-Type, X-Pixel-Companion, X-Pixel-Companion-Title, X-Pixel-Companion-Artist";
+        if (string.Equals(ctx.Request.Headers["Access-Control-Request-Private-Network"], "true", StringComparison.OrdinalIgnoreCase))
+            ctx.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
+        ctx.Response.Headers["Private-Network-Access-Name"] = "pixel-companion";
+        ctx.Response.Headers["Private-Network-Access-ID"] = "50:58:43:4f:4d:50";
     }
     private static string? DecodeHeader(string? encoded)
     {

@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pixel Companion HD Artwork",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Передаёт Pixel Companion большую обложку и текущую очередь YouTube Music.",
   "host_permissions": [
     "http://127.0.0.1:8765/*",
@@ -10,6 +10,10 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Pixel Companion HD Artwork",
+    "default_popup": "popup.html"
   },
   "content_scripts": [
     {

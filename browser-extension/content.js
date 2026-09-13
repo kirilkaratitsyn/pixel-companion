@@ -1,6 +1,6 @@
 (() => {
   'use strict';
-  let lastSent = '', scheduled = false;
+  let deliveredArtwork = '', pendingArtwork = '', scheduled = false;
 
   function clean(value) {
     return (value || '').replace(/\s+/g, ' ').trim();
@@ -15,9 +15,13 @@
     const url = PixelCompanionArtwork.largeArtworkUrl(image?.currentSrc || image?.src);
     if (!title || !url) return;
     const key = `${title}\n${url}`;
-    if (key === lastSent) return;
-    lastSent = key;
-    chrome.runtime.sendMessage({type: 'pixel-companion-artwork', title, artist, url}, () => void chrome.runtime.lastError);
+    if (key === deliveredArtwork || key === pendingArtwork) return;
+    pendingArtwork = key;
+    chrome.runtime.sendMessage({type: 'pixel-companion-artwork', title, artist, url}, response => {
+      const delivered = !chrome.runtime.lastError && response?.ok === true;
+      if (delivered) deliveredArtwork = key;
+      if (pendingArtwork === key) pendingArtwork = '';
+    });
   }
 
   function queue() {

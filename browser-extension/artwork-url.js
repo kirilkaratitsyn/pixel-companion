@@ -10,7 +10,13 @@
       const url = new URL(raw);
       if (!/^(?:lh[3-6]|yt3)\.googleusercontent\.com$/i.test(url.hostname) && url.hostname !== 'i.ytimg.com') return null;
       if (/^(?:lh[3-6]|yt3)\.googleusercontent\.com$/i.test(url.hostname)) {
-        url.pathname = url.pathname.replace(/=w\d+-h\d+[^/?]*/i, '=w1200-h1200-l90-rj');
+        // YouTube currently uses both =w60-h60-... and =s60-... suffixes.
+        // Replacing the complete transform avoids silently keeping a tiny source.
+        url.pathname = /=([^/?]+)$/i.test(url.pathname)
+          ? url.pathname.replace(/=[^/?]+$/i, '=w1200-h1200-l90-rj')
+          : `${url.pathname}=w1200-h1200-l90-rj`;
+      } else {
+        url.pathname = url.pathname.replace(/\/(?:default|mqdefault|hqdefault|sddefault|maxresdefault)\.(?:jpg|webp)$/i, '/maxresdefault.jpg');
       }
       return url.href;
     } catch { return null; }

@@ -19,6 +19,8 @@ public sealed class MediaBridge(BrowserController browser) : IDisposable
     private BrowserArtworkCandidate? browserArtwork;
     private DateTimeOffset lastMetadata = DateTimeOffset.MinValue;
     private DateTimeOffset lastMixer = DateTimeOffset.MinValue;
+    private DateTimeOffset lastManagerAttempt = DateTimeOffset.MinValue;
+    private string? managerError;
     private MixerApp[] mixer = [];
     private StateMessage latest = Empty(null);
     public StateMessage Latest => Volatile.Read(ref latest);
@@ -39,11 +41,26 @@ public sealed class MediaBridge(BrowserController browser) : IDisposable
 
     public async Task Initialize()
     {
-        manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-        manager.CurrentSessionChanged += (_, _) => Interlocked.Exchange(ref sourceDirty, 1);
-        manager.SessionsChanged += (_, _) => Interlocked.Exchange(ref sourceDirty, 1);
+        await TryInitializeManager();
         SystemEvents.SessionSwitch += SessionSwitch;
         await Refresh();
+    }
+    private async Task TryInitializeManager()
+    {
+        if (manager != null || DateTimeOffset.UtcNow - lastManagerAttempt < TimeSpan.FromSeconds(3)) return;
+        lastManagerAttempt = DateTimeOffset.UtcNow;
+        try
+        {
+            manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            manager.CurrentSessionChanged += (_, _) => Interlocked.Exchange(ref sourceDirty, 1);
+            manager.SessionsChanged += (_, _) => Interlocked.Exchange(ref sourceDirty, 1);
+            managerError = null;
+            Interlocked.Exchange(ref sourceDirty, 1);
+        }
+        catch (Exception e)
+        {
+            managerError = "Windows Media API пока недоступен: " + e.GetType().Name;
+        }
     }
     private void SessionSwitch(object sender, SessionSwitchEventArgs e)
     {
@@ -77,7 +94,15 @@ public sealed class MediaBridge(BrowserController browser) : IDisposable
     }
     private async Task RefreshCore()
     {
-        if (manager == null) return;
+        if (manager == null)
+        {
+            await TryInitializeManager();
+            if (manager == null)
+            {
+                Volatile.Write(ref latest, Empty(managerError ?? "Windows Media API пока недоступен"));
+                return;
+            }
+        }
         var sessions = manager.GetSessions();
         var sources = sessions.Select(s => s.SourceAppUserModelId).Distinct().Select(id => new SourceInfo(id, DisplayName(id))).ToArray();
         if (Interlocked.Exchange(ref sourceDirty, 0) != 0)

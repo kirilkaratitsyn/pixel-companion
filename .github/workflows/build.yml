@@ -17,6 +17,7 @@ jobs:
       - run: node --check web/app.js
       - run: node --check browser-extension/content.js
       - run: node --check browser-extension/background.js
+      - run: node --check browser-extension/popup.js
       - run: node tests/artwork-url.cjs
   windows:
     runs-on: windows-latest

@@ -28,6 +28,7 @@ async function transfer(message) {
   if (bytes.byteLength < 12 || bytes.byteLength > 8 * 1024 * 1024) return false;
   const response = await fetch('http://127.0.0.1:8765/api/browser-artwork', {
     method: 'POST',
+    targetAddressSpace: 'local',
     headers: {
       'Content-Type': image.headers.get('content-type').split(';')[0],
       'X-Pixel-Companion': 'browser-artwork-v1',
@@ -42,6 +43,7 @@ async function transfer(message) {
 async function synchronize(tracks) {
   const response = await fetch('http://127.0.0.1:8765/api/browser-state', {
     method: 'POST',
+    targetAddressSpace: 'local',
     headers: {'Content-Type': 'application/json', 'X-Pixel-Companion': 'browser-state-v1'},
     body: JSON.stringify({afterSequence: lastSequence, tracks: Array.isArray(tracks) ? tracks.slice(0, 60) : []})
   });
